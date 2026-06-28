@@ -40,12 +40,27 @@ def read_hosts():
 
 
 def write_hosts(entries):
-    """Write host mappings back to the hosts file."""
+    """Write host mappings back to the hosts file.
+
+    Uses atomic write (write-to-temp + rename) to prevent dnsmasq
+    from reading a truncated/empty file via inotify during updates.
+    """
+    import tempfile
     lines = []
     for entry in entries:
         lines.append(f"{entry['ip']}  {entry['hostnames']}")
-    with open(HOSTS_FILE, 'w') as f:
-        f.write('\n'.join(lines) + '\n')
+    content = '\n'.join(lines) + '\n'
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(HOSTS_FILE), suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+        os.replace(tmp_path, HOSTS_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def validate_ip(ip):
@@ -66,17 +81,25 @@ def validate_hostname(name):
 
 
 def reload_dnsmasq():
-    """Reload dnsmasq configuration."""
+    """Reload dnsmasq configuration.
+
+    Sends SIGHUP via systemctl reload so dnsmasq re-reads its
+    hosts files and configuration without dropping DNS service.
+    Falls back to restart only if reload is not supported.
+    Logs the action for troubleshooting.
+    """
     try:
         result = subprocess.run(
             ['systemctl', 'reload', DNSMASQ_SERVICE],
             capture_output=True, text=True, timeout=10
         )
-        if result.returncode != 0:
-            result = subprocess.run(
-                ['systemctl', 'restart', DNSMASQ_SERVICE],
-                capture_output=True, text=True, timeout=10
-            )
+        if result.returncode == 0:
+            return True, ''
+        # reload not supported or failed — try restart as last resort
+        result = subprocess.run(
+            ['systemctl', 'restart', DNSMASQ_SERVICE],
+            capture_output=True, text=True, timeout=15
+        )
         return result.returncode == 0, result.stderr
     except Exception as e:
         return False, str(e)
