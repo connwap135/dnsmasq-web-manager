@@ -1,0 +1,15 @@
+[Unit]
+Description=Dnsmasq Web Management Interface
+After=network.target dnsmasq.service
+Requires=dnsmasq.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/dnsmasq-web
+ExecStart=/usr/bin/python3 /opt/dnsmasq-web/app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

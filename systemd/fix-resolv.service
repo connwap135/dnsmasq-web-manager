@@ -1,0 +1,12 @@
+[Unit]
+Description=Fix /etc/resolv.conf for dnsmasq
+After=network.target dnsmasq.service
+Before=dnsmasq-web.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/fix-resolv-conf.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
